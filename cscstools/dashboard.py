@@ -148,55 +148,82 @@ def dashboard(notedb):
     df = notedb.data
     app = dash.Dash()
     app.layout = html.Div([
+        html.Div([
+            html.H5('NOTE VIEWER', style={'font-size': '40px', 'margin-top' : '0', 'margin-bottom' : '0'}),
+            html.Button('PREVIOUS', n_clicks=0,
+                        id='note-selection-previous',
+                        style={'width': '5%', 'display': 'inline-block'}),
+            html.Button('NEXT', n_clicks=0,
+                        id='note-selection-next',
+                        style={'width': '5%', 'display': 'inline-block'}),
+            dcc.Dropdown(
+                df['path'].unique(), df.loc[0, 'path'],
+                id='note-selection',
+                style={'width': '40%'}),
+            dcc.RadioItems(
+                [s.value for s in Spectrum], Spectrum.RGB.value,
+                id='spectrum-selection',
+                style={'width': '30%', 'display': 'inline-block'}),
+            dcc.RadioItems(
+                [s.value for s in Side], Side.FRONT.value,
+                id='side-selection',
+                style={'width': '25%', 'display': 'inline-block'}),
+            dcc.RadioItems(
+                ['Raw', 'Processed'], 'Raw',
+                id='straighten-selection',
+                style={'width': '14%', 'display': 'inline-block'})
+            ]),
+        html.Div([
+            dcc.Graph(
+                figure=generatePlot(Note(df.loc[0]), Spectrum.RGB, Side.FRONT),
+                id='note-window',
+                style={'width': '69%', 'display': 'inline-block'}),
             html.Div([
-                html.H5('NOTE VIEWER', style={'font-size': '40px', 'margin-top' : '0', 'margin-bottom' : '0'}),
-                html.Button('PREVIOUS', n_clicks=0,
-                            id='note-selection-previous',
-                            style={'width': '5%', 'display': 'inline-block'}),
-                html.Button('NEXT', n_clicks=0,
-                            id='note-selection-next',
-                            style={'width': '5%', 'display': 'inline-block'}),
-                dcc.Dropdown(
-                    df['path'].unique(), df.loc[0, 'path'],
-                    id='note-selection',
-                    style={'width': '40%'}),
-                dcc.RadioItems(
-                    [s.value for s in Spectrum], Spectrum.RGB.value,
-                    id='spectrum-selection',
-                    style={'width': '15%', 'display': 'inline-block'}),
-                dcc.RadioItems(
-                    [s.value for s in Side], Side.FRONT.value,
-                    id='side-selection',
-                    style={'width': '10%', 'display': 'inline-block'}),
-                dcc.RadioItems(
-                    ['Raw', 'Processed'], 'Raw',
-                    id='straighten-selection',
-                    style={'width': '10%', 'display': 'inline-block'})]),
-            html.Div([
-                dcc.Graph(
-                    figure=generatePlot(Note(df.loc[0]), Spectrum.RGB, Side.FRONT),
-                    id='note-window',
-                    style={'width': '69%', 'display': 'inline-block'}),
-                html.Div([
-                    html.Button('SAVE', n_clicks=0,
+                dcc.Tabs(id='tabs-right-window',
+                         value='meta-data',
+                         children=[dcc.Tab(label='Meta Data', value='meta-data'),
+                                   dcc.Tab(label='Features',  value='features')]),
+                html.Div(id='tabs-right-window-content')], style={'width': '30%', 'display': 'inline-block'})
+            ]),
+        html.Div([
+        dash_table.DataTable(formatDataFrame(df).to_dict('records'), [{"name": i, "id": i} for i in formatDataFrame(df).columns],
+                             id='note-table',
+                             style_table={'overflowY': 'scroll', 'height': 500})
+            ])
+    ])
+    # TODO: ADD UPDATE OF TAB WHEN SWITCHING BETWEEN
+    @app.callback(Output('tabs-right-window-content', 'children'),
+                  Input('tabs-right-window', 'value'))
+    def render_content(tab):
+        if tab == 'meta-data':
+            return [html.Button('SAVE', n_clicks=0,
                                 id='save-note-metadata',
-                                style={'width': '10%'}),
+                                style={'width': '15%'}),
                     html.Button('RESET', n_clicks=0,
                                 id='reset-note-metadata',
-                                style={'width': '10%'}),
+                                style={'width': '15%'}),
+                    dcc.Textarea(
+                        id='note-metadata',
+                        value=formatJSONForDisplay(dict(df.loc[0])),
+                        spellCheck=False,
+                        style={'width': '100%', 'height': 450},
+                        )
+                    ]
+        if tab == 'features':
+            return [html.Button('SAVE', n_clicks=0,
+                                id='save-note-metadata',
+                                style={'width': '15%'}),
+                    html.Button('RESET', n_clicks=0,
+                                id='reset-note-metadata',
+                                style={'width': '15%'}),
+                    dcc.Textarea(
+                        id='note-metadata',
+                        value='FEACHAZ GO ERE',
+                        spellCheck=False,
+                        style={'width': '100%', 'height': 450},
+                        )
+                    ]
 
-                ],  style={'width': '30%', 'display': 'inline-block'})
-            ], style={'width': '100%'}),
-        dcc.Textarea(
-            id='note-metadata',
-            style={'width': '100%'},
-            value=formatJSONForDisplay(dict(df.loc[0])),
-            spellCheck=False),
-            dash_table.DataTable(formatDataFrame(df).to_dict('records'), [{"name": i, "id": i} for i in formatDataFrame(df).columns],
-                                 id='note-table',
-                                 style_table={'overflowY': 'scroll', 'height': 500},
-                                 )
-    ])
 
     @app.callback(
         Output('note-window', 'figure'),
