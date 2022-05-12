@@ -14,7 +14,15 @@ from notemanager import Note
 import plotly.graph_objects as go
 
 
-def generatePlot(note, spectrum, side, straighten=False):
+def getAdjustedROI(arr, scaleSize, roi):
+    yMin = int(arr.shape[0] * roi['yMin'] / scaleSize[0])
+    yMax = int(arr.shape[0] * roi['yMax'] / scaleSize[0])
+    xMin = int(arr.shape[1] * roi['xMin'] / scaleSize[1])
+    xMax = int(arr.shape[1] * roi['xMax'] / scaleSize[1])
+    return {'xMin': xMin, 'xMax': xMax, 'yMin': arr.shape[0] - yMax, 'yMax': arr.shape[0] - yMin}
+
+
+def generatePlot(note, spectrum, side, crop=None, straighten=False):
     imgWidth = 1200
     imgHeight = 500
 
@@ -31,6 +39,13 @@ def generatePlot(note, spectrum, side, straighten=False):
 
     if im.shape[0] > im.shape[1]:
         im = cv2.rotate(imObj.array, 0)
+
+    if crop:
+        roi = getAdjustedROI(im, (imgHeight, imgWidth), crop)
+        if len(im.shape) == 2:
+            im = im[roi['yMin']:roi['yMax'], roi['xMin']:roi['xMax']]
+        else:
+            im = im[roi['yMin']:roi['yMax'], roi['xMin']:roi['xMax'], :]
 
     im = cv2.resize(im, (imgWidth, imgHeight))
     if len(im.shape) == 3:
@@ -146,7 +161,8 @@ def formatDataFrame(df):
 
 def dashboard(notedb):
     df = notedb.data
-    app = dash.Dash()
+    app = dash.Dash(suppress_callback_exceptions=True)
+
     app.layout = html.Div([
         html.Div([
             html.H5('NOTE VIEWER', style={'font-size': '40px', 'margin-top' : '0', 'margin-bottom' : '0'}),
@@ -193,8 +209,11 @@ def dashboard(notedb):
     ])
     # TODO: ADD UPDATE OF TAB WHEN SWITCHING BETWEEN
     @app.callback(Output('tabs-right-window-content', 'children'),
-                  Input('tabs-right-window', 'value'))
-    def render_content(tab):
+                  Input('tabs-right-window', 'value'),
+                  State('note-selection', 'value'))
+    def render_content(tab, noteSelection):
+        idx = df.index[df['path'] == noteSelection][0]
+        dic = dict(df.loc[idx])
         if tab == 'meta-data':
             return [html.Button('SAVE', n_clicks=0,
                                 id='save-note-metadata',
@@ -204,21 +223,15 @@ def dashboard(notedb):
                                 style={'width': '15%'}),
                     dcc.Textarea(
                         id='note-metadata',
-                        value=formatJSONForDisplay(dict(df.loc[0])),
+                        value=formatJSONForDisplay(dic),
                         spellCheck=False,
                         style={'width': '100%', 'height': 450},
                         )
                     ]
         if tab == 'features':
-            return [html.Button('SAVE', n_clicks=0,
-                                id='save-note-metadata',
-                                style={'width': '15%'}),
-                    html.Button('RESET', n_clicks=0,
-                                id='reset-note-metadata',
-                                style={'width': '15%'}),
-                    dcc.Textarea(
-                        id='note-metadata',
-                        value='FEACHAZ GO ERE',
+            return [dcc.Textarea(
+                        id='feature-data',
+                        value='WAKKA WAKKA',
                         spellCheck=False,
                         style={'width': '100%', 'height': 450},
                         )
@@ -230,14 +243,35 @@ def dashboard(notedb):
         Input('note-selection', 'value'),
         Input('spectrum-selection', 'value'),
         Input('side-selection', 'value'),
-        Input('straighten-selection', 'value'))
-    def selectNote(noteSelection, spectrumSelection, sideSelection, straightenSelection):
+        Input('straighten-selection', 'value'),
+        Input('note-window', 'relayoutData'))
+    def selectNote(noteSelection, spectrumSelection, sideSelection, straightenSelection, relayoutData):
+        try:
+            cropROI = {'xMin' : relayoutData["xaxis.range[0]"],
+                       'xMax' : relayoutData["xaxis.range[1]"],
+                       'yMin' : relayoutData["yaxis.range[0]"],
+                       'yMax' : relayoutData["yaxis.range[1]"]}
+        except:
+            cropROI = None
         idx = df.index[df['path'] == noteSelection][0]
         note = Note(df.loc[idx])
         straighten = True
         if straightenSelection == 'Raw':
             straighten = False
-        return generatePlot(note, Spectrum(spectrumSelection), Side(sideSelection), straighten=straighten)
+        return generatePlot(note, Spectrum(spectrumSelection), Side(sideSelection), crop=cropROI, straighten=straighten)
+
+    @app.callback(
+        Output('feature-data', 'value'),
+        Input('note-window', 'relayoutData'))
+    def getZoomSelection(data):
+        try:
+            xMin = data["xaxis.range[0]"]
+            xMax = data["xaxis.range[1]"]
+            yMin = data["yaxis.range[0]"]
+            yMax = data["yaxis.range[1]"]
+        except:
+            return None
+        return f'{json.dumps(data)}\n({yMin}, {xMin}), ({yMax}, {xMax})'
 
     @app.callback(
         Output('note-metadata', 'value'),
@@ -287,4 +321,4 @@ def dashboard(notedb):
 
         return df.loc[idx, 'path']
 
-    app.run_server(debug=True)
+    app.run_server(debug=True, port=8050, host='0.0.0.0')
